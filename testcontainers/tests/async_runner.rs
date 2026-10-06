@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use bollard::{
     query_parameters::{ListImagesOptions, RemoveImageOptions},
@@ -13,7 +16,8 @@ use testcontainers::{
         BuildImageOptions, CmdWaitFor, CopyFromContainerError, ExecCommand, WaitFor,
     },
     runners::{AsyncBuilder, AsyncRunner},
-    CopyTargetOptions, GenericBuildableImage, GenericImage, Image, ImageExt,
+    BuildableImage, ContainerAsync, ContainerRequest, CopyTargetOptions, GenericBuildableImage,
+    GenericImage, Image, ImageExt,
 };
 use tokio::io::AsyncReadExt;
 
@@ -570,4 +574,66 @@ async fn async_tmpfs_mount_with_multiple_sizes() -> anyhow::Result<()> {
     assert!(stdout.contains("data2"), "Second tmpfs mount should work");
 
     Ok(())
+}
+
+// Compile-only check: the futures returned by the async traits must be `Send` when they are
+// awaited in generic code, both through a trait bound and through the blanket impls, including
+// calls that pass borrowed arguments (see rust-lang/rust#100013).
+#[allow(dead_code)]
+fn async_trait_futures_are_send<I, R, B, X>(
+    image: I,
+    runner: R,
+    builder: X,
+    container: &ContainerAsync<I>,
+    path: &Path,
+    buffer: &mut Vec<u8>,
+) where
+    I: Image,
+    R: AsyncRunner<I> + Clone + Send,
+    B: BuildableImage,
+    X: AsyncBuilder<B> + Clone + Send,
+{
+    fn assert_send<T: Send>(_: T) {}
+
+    async fn start<I: Image>(runner: impl AsyncRunner<I>) -> anyhow::Result<ContainerAsync<I>> {
+        Ok(runner.start().await?)
+    }
+
+    async fn start_named<I: Image>(image: I, name: &str) -> anyhow::Result<ContainerAsync<I>> {
+        Ok(image.with_container_name(name).start().await?)
+    }
+
+    async fn pull<I: Image>(runner: impl AsyncRunner<I>) -> anyhow::Result<ContainerRequest<I>> {
+        Ok(runner.pull_image().await?)
+    }
+
+    async fn build<B: BuildableImage>(builder: impl AsyncBuilder<B>) -> anyhow::Result<B::Built> {
+        Ok(builder.build_image().await?)
+    }
+
+    async fn build_with<B: BuildableImage>(
+        builder: impl AsyncBuilder<B>,
+    ) -> anyhow::Result<B::Built> {
+        Ok(builder.build_image_with(BuildImageOptions::new()).await?)
+    }
+
+    async fn copy<I: Image>(
+        container: &ContainerAsync<I>,
+        path: &Path,
+        buffer: &mut Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>> {
+        container.copy_file_from("/tmp/a", path).await?;
+        container
+            .copy_file_from("/tmp/b", path.to_path_buf())
+            .await?;
+        container.copy_file_from("/tmp/c", buffer).await?;
+        Ok(container.copy_file_from("/tmp/d", Vec::new()).await?)
+    }
+
+    assert_send(start(runner.clone()));
+    assert_send(pull(runner));
+    assert_send(start_named(image, "name"));
+    assert_send(build(builder.clone()));
+    assert_send(build_with(builder));
+    assert_send(copy(container, path, buffer));
 }

@@ -1,6 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+};
 
-use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_tar::EntryType;
 
@@ -45,19 +47,20 @@ pub enum CopyFromContainerError {
 /// report success with `()`. Implementations must consume the provided reader until EOF or return
 /// an error. Destinations are allowed to discard any existing data to make room for the incoming
 /// bytes.
-#[async_trait(?Send)]
 pub trait CopyFileFromContainer {
     type Output;
 
     /// Writes all bytes from the reader into `self`, returning a value that represents the completed operation (or `()` for sinks that only confirm success).
     ///
     /// Implementations may mutate `self` and must propagate I/O errors via [`CopyFromContainerError`].
-    async fn copy_from_reader<R>(self, reader: R) -> Result<Self::Output, CopyFromContainerError>
+    fn copy_from_reader<R>(
+        self,
+        reader: R,
+    ) -> impl Future<Output = Result<Self::Output, CopyFromContainerError>>
     where
         R: AsyncRead + Unpin;
 }
 
-#[async_trait(?Send)]
 impl CopyFileFromContainer for Vec<u8> {
     type Output = Vec<u8>;
 
@@ -74,12 +77,11 @@ impl CopyFileFromContainer for Vec<u8> {
     }
 }
 
-#[async_trait(?Send)]
 impl CopyFileFromContainer for &mut Vec<u8> {
     type Output = ();
 
     async fn copy_from_reader<R>(
-        mut self,
+        self,
         mut reader: R,
     ) -> Result<Self::Output, CopyFromContainerError>
     where
@@ -87,14 +89,13 @@ impl CopyFileFromContainer for &mut Vec<u8> {
     {
         self.clear();
         reader
-            .read_to_end(&mut self)
+            .read_to_end(self)
             .await
             .map_err(CopyFromContainerError::Io)?;
         Ok(())
     }
 }
 
-#[async_trait(?Send)]
 impl CopyFileFromContainer for PathBuf {
     type Output = ();
 
@@ -106,7 +107,6 @@ impl CopyFileFromContainer for PathBuf {
     }
 }
 
-#[async_trait(?Send)]
 impl CopyFileFromContainer for &Path {
     type Output = ();
 

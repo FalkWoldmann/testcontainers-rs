@@ -16,7 +16,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-async-trait = { version = "0.1" }
 bollard = { version = "0.21.0", features = ["buildkit_providerless", "time"] }
 http = "1.1"
 bytes = "1.6.0"

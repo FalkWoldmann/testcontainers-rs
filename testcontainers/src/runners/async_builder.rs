@@ -1,17 +1,18 @@
-use async_trait::async_trait;
+use std::future::Future;
 
 use crate::{
     core::{build::build_options::BuildImageOptions, client::Client, error::Result},
     BuildableImage,
 };
 
-#[async_trait]
 pub trait AsyncBuilder<B: BuildableImage> {
-    async fn build_image(self) -> Result<B::Built>;
-    async fn build_image_with(self, options: BuildImageOptions) -> Result<B::Built>;
+    fn build_image(self) -> impl Future<Output = Result<B::Built>> + Send;
+    fn build_image_with(
+        self,
+        options: BuildImageOptions,
+    ) -> impl Future<Output = Result<B::Built>> + Send;
 }
 
-#[async_trait]
 /// Helper trait to build Docker images asynchronously from [`BuildableImage`] instances.
 ///
 /// Provides an asynchronous interface for building custom Docker images within test environments.

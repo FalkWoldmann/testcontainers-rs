@@ -1,6 +1,5 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, future::Future, time::Duration};
 
-use async_trait::async_trait;
 use bollard::{
     models::{
         ContainerCreateBody, HostConfig, HostConfigCgroupnsModeEnum, PortBinding, ResourcesUlimits,
@@ -44,7 +43,6 @@ pub(crate) fn session_id() -> &'static ferroid::id::ULID {
     &TESTCONTAINERS_SESSION_ID
 }
 
-#[async_trait]
 /// Helper trait to start containers asynchronously.
 ///
 /// ## Example
@@ -62,14 +60,13 @@ pub(crate) fn session_id() -> &'static ferroid::id::ULID {
 /// ```
 pub trait AsyncRunner<I: Image> {
     /// Starts the container and returns an instance of `ContainerAsync`.
-    async fn start(self) -> Result<ContainerAsync<I>>;
+    fn start(self) -> impl Future<Output = Result<ContainerAsync<I>>> + Send;
 
     /// Pulls the image from the registry.
     /// Useful if you want to pull the image before starting the container.
-    async fn pull_image(self) -> Result<ContainerRequest<I>>;
+    fn pull_image(self) -> impl Future<Output = Result<ContainerRequest<I>>> + Send;
 }
 
-#[async_trait]
 impl<T, I> AsyncRunner<I> for T
 where
     T: Into<ContainerRequest<I>> + Send,

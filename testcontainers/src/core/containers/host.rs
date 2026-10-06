@@ -183,9 +183,13 @@ fn prepare_host_exposure<I: Image>(
     }))
 }
 
-async fn spawn_sshd_sidecar(
+// This runs inside `AsyncRunner::start`, so starting the sidecar is a recursive call and its
+// future has to be boxed. The explicit `Send` bound is needed as well, otherwise rustc runs into
+// a query cycle while checking that the future returned by `start` is `Send`.
+fn spawn_sshd_sidecar(
     plan: &HostExposurePlan,
-) -> Result<ContainerAsync<GenericImage>, TestcontainersError> {
+) -> impl future::Future<Output = Result<ContainerAsync<GenericImage>, TestcontainersError>> + Send
+{
     // Future improvement: swap the SSHD sidecar with a purpose-built container or
     // lightweight SOCKS5 proxy to unlock features like UDP forwarding while keeping
     // host port exposure flexible.
@@ -198,7 +202,7 @@ async fn spawn_sshd_sidecar(
         sshd = sshd.with_network(network);
     }
 
-    sshd.start().await
+    Box::pin(sshd.start())
 }
 
 async fn establish_ssh_connection(
